@@ -61,7 +61,7 @@ let
   };
 
   # Configuration generators:
-  genNbdNetbootSupervisorConfig = supervisorId: let
+  genNbdNetbootSupervisorConfig = supervisorId: nbdNetbootStatic: let
     dbSupervisor = db.supervisors."${supervisorId}";
     dbSiteSupervisor = dbSite.supervisors."${supervisorId}";
     dbSwitch = dbSite.switches."${dbSiteSupervisor.nbd_netboot_host_switch}";
@@ -70,7 +70,7 @@ let
     networkCIDR = "${dbSiteSupervisor.nbd_netboot_host_ip4.network}/${toString dbSiteSupervisor.nbd_netboot_host_ip4.prefixlen}";
     supervisorCIDR = "${dbSiteSupervisor.nbd_netboot_host_ip4.supervisor_addr}/${toString dbSiteSupervisor.nbd_netboot_host_ip4.prefixlen}";
     hostCIDR = "${dbSiteSupervisor.nbd_netboot_host_ip4.addr}/${toString dbSiteSupervisor.nbd_netboot_host_ip4.prefixlen}";
-  in {
+  in mkMerge [{
     # VLAN network device on the experiment link
     systemd.network.netdevs."10-${vlanNetdevName}" = {
       netdevConfig = {
@@ -144,8 +144,79 @@ let
         SYMLINK+="${tmlDevFsPrefix}/${supervisorId}/host-console", \
         MODE="0666"
     '';
+  } (optionalAttrs nbdNetbootStatic (let
+    state_dir = "/var/lib/treadmill/supervisor-state/nbd-netboot-static-${supervisorId}";
+  in {
+    systemd.services."tml-nbd-netboot-static-${shortId supervisorId}-boot-tftp" = {
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      restartIfChanged = false;
+      reloadIfChanged = false;
 
-  };
+      serviceConfig = {
+        Type = "simple";
+        User = "tml";
+        Group = "tml";
+        ExecStartPre = pkgs.writeScript "tml-nbd-netboot-static-${shortId supervisorId}-boot-tftp-setup.sh" ''
+          #!${pkgs.bash}/bin/bash
+          set -e -x
+
+          # Ensure the work directory
+          ${pkgs.coreutils}/bin/mkdir -p "${state_dir}"
+
+          # Remove any existing unpacked boot files
+          ${pkgs.coreutils}/bin/rm -rf "${state_dir}/boot"
+
+          # Unpack the boot file system
+          ${pkgs.coreutils}/bin/mkdir -p "${state_dir}/boot"
+          ${pkgs.gnutar}/bin/tar -xf "${dbSupervisor.nbd_netboot_static.boot_archive}" -C "${state_dir}/boot"
+        '';
+        ExecStart = "+${pkgs.atftp}/sbin/atftpd --daemon --no-fork --bind-address ${dbSiteSupervisor.nbd_netboot_host_ip4.supervisor_addr} ${state_dir}/boot";
+      };
+    };
+
+    systemd.services."tml-nbd-netboot-static-${shortId supervisorId}-root-nbd" = {
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      restartIfChanged = false;
+      reloadIfChanged = false;
+
+      serviceConfig = rec {
+        Type = "simple";
+        User = "tml";
+        Group = "tml";
+        ExecStart = pkgs.writeScript "tml-nbd-netboot-static-${shortId supervisorId}-root-nbd.sh" ''
+          #!${pkgs.bash}/bin/bash
+          set -e -x
+
+          # Ensure the work directory exists
+          mkdir -p "${state_dir}"
+
+          # We want to create a new COW layer if the base image path changes,
+          # thus we name it after its hash:
+          BASE_IMAGE_PATH_HASH="$( \
+            echo -n "${dbSupervisor.nbd_netboot_static.root_base_image}" \
+            | ${pkgs.coreutils}/bin/sha256sum \
+            | ${pkgs.coreutils}/bin/cut -d' ' -f1)"
+          COW_IMAGE_PATH="${state_dir}/$BASE_IMAGE_PATH_HASH.cow.qcow2"
+
+          # Create a new thin COW layer if it doesn't exist yet:
+          if [ ! -f "$COW_IMAGE_PATH" ]; then
+            ${pkgs.qemu}/bin/qemu-img create \
+              -b "${dbSupervisor.nbd_netboot_static.root_base_image}" -F qcow2 \
+              -f qcow2 "$COW_IMAGE_PATH" "${dbSupervisor.nbd_netboot_static.root_dev_size}"
+          fi
+
+          # Exec the qemu-nbd image server
+          exec ${pkgs.qemu}/bin/qemu-nbd \
+            --aio=io_uring --discard=unmap --detect-zeroes=unmap \
+            --format=qcow2 --export-name=root --persistent --shared=0 \
+            --bind ${dbSiteSupervisor.nbd_netboot_host_ip4.supervisor_addr} \
+            "$COW_IMAGE_PATH"
+        '';
+      };
+    };
+  }))];
 
   genQemuSupervisorConfig = supervisorId: let
     dbSupervisor = db.supervisors."${supervisorId}";
@@ -167,7 +238,7 @@ let
 
       ws_connector = {
         switchboard_uri = "wss://api.treadmill.ci";
-        token_file = "/var/lib/treadmill/supervisor-state/qemu-${supervisorId}/ws_token";
+        token_file = "/var/lib/treadmill/supervisor-ws-tokens/${supervisorId}";
       };
 
       image_store = {
@@ -179,7 +250,7 @@ let
         fs_endpoint = "/var/lib/treadmill/store";
       };
 
-      qemu = {
+      qemu = rec {
         qemu_binary = "${qemuPkg}/bin/qemu-kvm";
         qemu_img_binary = "${qemuPkg}/bin/qemu-img";
 
@@ -204,6 +275,8 @@ let
           # Treamill-specific attributes:
           # (10.0.2.2 is the host address in QEMU SLIRP networking)
           "-fw_cfg" "name=opt/org.tockos.treadmill.tcp-ctrl-socket,string=${dbSiteSupervisor.qemu_host_ip4.supervisor_addr}:3859"
+          # QEMU monitor for debugging:
+          "-monitor" "unix:qemu-monitor-socket,server,nowait,path=${state_dir}/monitor_sock"
           # USB:
           "-device" "qemu-xhci"
         ] ++ (
@@ -340,8 +413,8 @@ let
     dbSupervisor = db.supervisors."${supervisorId}";
   in
     # Call out to different generators depending on the type of supervisor:
-    if dbSupervisor.type == "nbd_netboot" then
-      genNbdNetbootSupervisorConfig supervisorId
+    if (dbSupervisor.type == "nbd_netboot" || dbSupervisor.type == "nbd_netboot_static") then
+      genNbdNetbootSupervisorConfig supervisorId (dbSupervisor.type == "nbd_netboot_static")
     else if dbSupervisor.type == "qemu" then
       genQemuSupervisorConfig supervisorId
     else

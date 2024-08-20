@@ -84,5 +84,23 @@
         addr = "172.17.193.26";
       };
     };
+    
+    "0af84b36-1d44-4e0e-9046-1f3fd8ec1cbf" = {
+      qemu_host_ip4 = {
+        network = "172.17.193.28";
+        prefixlen = 30;
+        supervisor_addr = "172.17.193.29";
+        addr = "172.17.193.30";
+      };
+    };
+    
+    "25b97cf7-cf3c-4955-8f33-a8ea938c4f5b" = {
+      qemu_host_ip4 = {
+        network = "172.17.193.32";
+        prefixlen = 30;
+        supervisor_addr = "172.17.193.33";
+        addr = "172.17.193.34";
+      };
+    };
   };
 }
