@@ -30,4 +30,31 @@
     hwrev = "";
     serial_no = "";
   };
+
+  pin_mappings = {
+    "GPIO_20" = {
+      target_pin = "P0.13";
+      target_pin_function = "LED1";
+      target_pin_mode = "output";
+      target_pin_active = "low";
+    };
+    "GPIO_19" = {
+      target_pin = "P0.14";
+      target_pin_function = "LED2";
+      target_pin_mode = "output";
+      target_pin_active = "low";
+    };
+    "GPIO_21" = {
+      target_pin = "P0.11";
+      target_pin_function = "BUTTON1";
+      target_pin_mode = "input";
+      target_pin_active = "low";
+    };
+    "GPIO_26" = {
+      target_pin = "P0.12";
+      target_pin_function = "BUTTON2";
+      target_pin_mode = "input";
+      target_pin_active = "low";
+    };
+  };
 }
