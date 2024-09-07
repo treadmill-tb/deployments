@@ -54,7 +54,7 @@
 
     "64e5e94d-67e9-4276-9a0c-509a6789b372" = {
       nbd_netboot_host_switch = "pton-srv0-sw0";
-      nbd_netboot_host_port = "ge-0/0/5";
+      nbd_netboot_host_port = "ge-0/0/6";
       nbd_netboot_host_vlan = 1004;
       nbd_netboot_host_ip4 = {
         network = "172.17.193.16";
@@ -66,7 +66,7 @@
 
     "8ff22e8e-ead7-433a-a921-c7206face09d" = {
       nbd_netboot_host_switch = "pton-srv0-sw0";
-      nbd_netboot_host_port = "ge-0/0/6";
+      nbd_netboot_host_port = "ge-0/0/8";
       nbd_netboot_host_vlan = 1005;
       nbd_netboot_host_ip4 = {
         network = "172.17.193.20";
@@ -84,7 +84,7 @@
         addr = "172.17.193.26";
       };
     };
-    
+
     "0af84b36-1d44-4e0e-9046-1f3fd8ec1cbf" = {
       qemu_host_ip4 = {
         network = "172.17.193.28";
@@ -93,7 +93,7 @@
         addr = "172.17.193.30";
       };
     };
-    
+
     "25b97cf7-cf3c-4955-8f33-a8ea938c4f5b" = {
       qemu_host_ip4 = {
         network = "172.17.193.32";
