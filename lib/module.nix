@@ -35,8 +35,8 @@ let
 
   tmlSource = builtins.fetchGit {
     url = "https://github.com/treadmill-tb/treadmill";
-    ref = "dev/qemu-tracing";
-    rev = "ddbba1723977b320b6e0ec72342cf0527b2a9736";
+    ref = "main";
+    rev = "26b07b38866fca23bbc7c473d3eef40fc61d06b6";
   };
 
   rustToolchain = fenix.fromToolchainFile {
@@ -237,7 +237,7 @@ let
       };
 
       ws_connector = {
-        switchboard_uri = "wss://api.treadmill.ci";
+        switchboard_uri = "wss://swb.treadmill.ci";
         token_file = "/var/lib/treadmill/supervisor-ws-tokens/${supervisorId}";
       };
 
