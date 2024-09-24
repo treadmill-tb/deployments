@@ -362,6 +362,17 @@ let
       }];
     };
 
+    systemd.services."tml-supervisor-qemu-${shortId supervisorId}-ssh-proxy" = {
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      serviceConfig = {
+        Type = "simple";
+        User = "root";
+        Group = "root";
+        ExecStart = "${pkgs.socat}/bin/socat TCP4-LISTEN:${builtins.toString dbSiteSupervisor.qemu_host_ip4.ssh_forward_host_port},fork,reuseaddr TCP:${dbSiteSupervisor.qemu_host_ip4.addr}:22";
+      };
+    };
+
     systemd.services."tml-supervisor-qemu-${shortId supervisorId}" = {
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];

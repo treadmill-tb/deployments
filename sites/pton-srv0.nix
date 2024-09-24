@@ -82,6 +82,7 @@
         prefixlen = 30;
         supervisor_addr = "172.17.193.25";
         addr = "172.17.193.26";
+        ssh_forward_host_port = 22026;
       };
     };
 
@@ -91,6 +92,7 @@
         prefixlen = 30;
         supervisor_addr = "172.17.193.29";
         addr = "172.17.193.30";
+        ssh_forward_host_port = 22030;
       };
     };
 
@@ -100,6 +102,7 @@
         prefixlen = 30;
         supervisor_addr = "172.17.193.33";
         addr = "172.17.193.34";
+        ssh_forward_host_port = 22034;
       };
     };
   };
