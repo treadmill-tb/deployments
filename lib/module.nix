@@ -36,7 +36,7 @@ let
   tmlSource = builtins.fetchGit {
     url = "https://github.com/treadmill-tb/treadmill";
     ref = "main";
-    rev = "26b07b38866fca23bbc7c473d3eef40fc61d06b6";
+    rev = "553f7f3fd53a14609457947d3f42045002bd6499";
   };
 
   rustToolchain = fenix.fromToolchainFile {
