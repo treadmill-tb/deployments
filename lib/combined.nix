@@ -5,8 +5,10 @@
 let
   baseDir = ./..;
 
+  isUuid = str: (builtins.match "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" str) != null;
+
   ensureUuid = str:
-    if (builtins.match "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" str) == null then
+    if !(isUuid str) then
       throw "String is not a valid UUID: ${str}"
     else
       str;
@@ -21,7 +23,9 @@ let
             (ensureUuid (lib.removeSuffix ".nix" fileName))
             (import "${baseDir}/supervisors/${fileName}")
       ) (
-        builtins.readDir "${baseDir}/supervisors/"
+        lib.filterAttrs
+          (fileName: _fileType: isUuid (lib.removeSuffix ".nix" fileName))
+          (builtins.readDir "${baseDir}/supervisors/")
       );
 
     sites =

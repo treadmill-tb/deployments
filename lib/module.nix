@@ -36,7 +36,7 @@ let
   tmlSource = builtins.fetchGit {
     url = "https://github.com/treadmill-tb/treadmill";
     ref = "main";
-    rev = "553f7f3fd53a14609457947d3f42045002bd6499";
+    rev = "49b600eb327e9506e7c5d8126ae842b6813e3d25";
   };
 
   rustToolchain = fenix.fromToolchainFile {
@@ -60,8 +60,19 @@ let
     cargoLock.outputHashes."inquire-0.7.5" = "sha256-iEdsjq4IYYl6QoJmDkPQS5bJJvPG3sehDygefAOhTrY=";
   };
 
+  tmlNbdNetbootSupervisor = rustPlatform.buildRustPackage rec {
+    pname = "tml-nbd-netboot-supervisor";
+    version = "0.0.1";
+
+    src = "${tmlSource}";
+    buildAndTestSubdir = "supervisor/nbd-netboot";
+
+    cargoLock.lockFile = "${src}/Cargo.lock";
+    cargoLock.outputHashes."inquire-0.7.5" = "sha256-iEdsjq4IYYl6QoJmDkPQS5bJJvPG3sehDygefAOhTrY=";
+  };
+
   # Configuration generators:
-  genNbdNetbootSupervisorConfig = supervisorId: nbdNetbootStatic: let
+  genNbdNetbootSupervisorConfig = supervisorId: nbdNetbootIsStatic: let
     dbSupervisor = db.supervisors."${supervisorId}";
     dbSiteSupervisor = dbSite.supervisors."${supervisorId}";
     dbSwitch = dbSite.switches."${dbSiteSupervisor.nbd_netboot_host_switch}";
@@ -144,7 +155,7 @@ let
         SYMLINK+="${tmlDevFsPrefix}/${supervisorId}/host-console", \
         MODE="0666"
     '';
-  } (optionalAttrs nbdNetbootStatic (let
+  } (optionalAttrs nbdNetbootIsStatic (let
     state_dir = "/var/lib/treadmill/supervisor-state/nbd-netboot-static-${supervisorId}";
   in {
     systemd.services."tml-nbd-netboot-static-${shortId supervisorId}-boot-tftp" = {
@@ -214,6 +225,103 @@ let
             --bind ${dbSiteSupervisor.nbd_netboot_host_ip4.supervisor_addr} \
             "$COW_IMAGE_PATH"
         '';
+      };
+    };
+  }))
+  (optionalAttrs (!nbdNetbootIsStatic) (let
+    state_dir = "/var/lib/treadmill/supervisor-state/nbd-netboot-${supervisorId}";
+
+    nbdNetbootSupervisorConfig = {
+      base = {
+        supervisor_id = supervisorId;
+        coord_connector = "ws_connector";
+      };
+
+      ws_connector = {
+        switchboard_uri = "wss://swb.treadmill.ci";
+        token_file = "/var/lib/treadmill/supervisor-ws-tokens/${supervisorId}";
+      };
+
+      image_store = {
+        # Doesn't do anything yet. This endpoint will be used to request
+        # images to be downloaded etc. later on:
+        http_endpoint = "https://localhost:8080";
+
+        # Local mountpoint of the read-only image store:
+        fs_endpoint = "/var/lib/treadmill/store";
+      };
+
+      nbd_netboot = rec {
+        inherit state_dir;
+
+        qemu_nbd_binary = "${pkgs.qemu}/bin/qemu-nbd";
+        qemu_img_binary = "${pkgs.qemu}/bin/qemu-img";
+        tar_binary = "${pkgs.gnutar}/bin/tar";
+
+        tcp_control_socket_listen_addr = "${dbSiteSupervisor.nbd_netboot_host_ip4.supervisor_addr}:3859";
+        nbd_server_listen_addr = "${dbSiteSupervisor.nbd_netboot_host_ip4.supervisor_addr}:10809";
+        tftp_boot_dir = "${state_dir}/tftp-boot";
+
+        # Each VM will have at most 32GB to work with. This should be
+        # sufficient to support most images, even heavy-weight toolchains
+        # (such as OpenTitan with Bazel and Vivado Lab tools)
+        working_disk_max_bytes = 34359738368;
+
+        start_script = dbSwitch.start_script dbSiteSupervisor.nbd_netboot_host_switch_port pkgs;
+        stop_script = dbSwitch.stop_script dbSiteSupervisor.nbd_netboot_host_switch_port pkgs;
+      };
+    };
+  in {
+    systemd.services."tml-nbd-netboot-${shortId supervisorId}-boot-tftp" = {
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      restartIfChanged = false;
+      reloadIfChanged = false;
+
+      serviceConfig = {
+        Type = "simple";
+        User = "tml";
+        Group = "tml";
+        ExecStartPre = pkgs.writeScript "tml-nbd-netboot-${shortId supervisorId}-boot-tftp-setup.sh" ''
+          #!${pkgs.bash}/bin/bash
+          set -e -x
+
+          # Ensure the tftp boot directory exists
+          ${pkgs.coreutils}/bin/mkdir -p "${state_dir}/tftp-boot"
+        '';
+        ExecStart = "+${pkgs.atftp}/sbin/atftpd --daemon --no-fork --bind-address ${dbSiteSupervisor.nbd_netboot_host_ip4.supervisor_addr} ${state_dir}/tftp-boot";
+      };
+    };
+
+    systemd.services."tml-nbd-netboot-${shortId supervisorId}-ssh-proxy" = {
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      serviceConfig = {
+        Type = "simple";
+        User = "root";
+        Group = "root";
+        ExecStart = "${pkgs.socat}/bin/socat TCP4-LISTEN:${builtins.toString dbSiteSupervisor.nbd_netboot_host_ip4.ssh_forward_host_port},fork,reuseaddr TCP:${dbSiteSupervisor.nbd_netboot_host_ip4.addr}:22";
+      };
+    };
+
+    systemd.services."tml-nbd-netboot-${shortId supervisorId}-supervisor" = {
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      restartIfChanged = false;
+      reloadIfChanged = true;
+
+      serviceConfig = rec {
+        Type = "simple";
+        User = "tml";
+        Group = "tml";
+        Environment = [ "RUST_LOG=debug" ];
+        ExecStartPre = [
+          "${pkgs.coreutils}/bin/mkdir -p ${nbdNetbootSupervisorConfig.nbd_netboot.state_dir}"
+          "${pkgs.coreutils}/bin/chown ${User}:${Group} ${nbdNetbootSupervisorConfig.nbd_netboot.state_dir}"
+        ];
+        ExecStart = "${tmlNbdNetbootSupervisor}/bin/tml-nbd-netboot-supervisor -c ${
+          (pkgs.formats.toml {}).generate "tml-nbd-netboot-${supervisorId}-supervisor.toml" nbdNetbootSupervisorConfig
+        }";
       };
     };
   }))];
@@ -383,6 +491,7 @@ let
         Type = "simple";
         User = "tml";
         Group = "tml";
+        Environment = [ "RUST_LOG=debug" ];
         ExecStartPre = [
           "${pkgs.coreutils}/bin/mkdir -p ${qemuSupervisorConfig.qemu.state_dir}"
           "${pkgs.coreutils}/bin/chown ${User}:${Group} ${qemuSupervisorConfig.qemu.state_dir}"
