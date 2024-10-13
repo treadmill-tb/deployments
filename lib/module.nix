@@ -470,7 +470,7 @@ let
       }];
     };
 
-    systemd.services."tml-supervisor-qemu-${shortId supervisorId}-ssh-proxy" = {
+    systemd.services."tml-qemu-${shortId supervisorId}-ssh-proxy" = {
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
       serviceConfig = {
@@ -481,7 +481,7 @@ let
       };
     };
 
-    systemd.services."tml-supervisor-qemu-${shortId supervisorId}" = {
+    systemd.services."tml-qemu-${shortId supervisorId}-supervisor" = {
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
       restartIfChanged = false;
@@ -497,7 +497,7 @@ let
           "${pkgs.coreutils}/bin/chown ${User}:${Group} ${qemuSupervisorConfig.qemu.state_dir}"
         ];
         ExecStart = "${tmlQemuSupervisor}/bin/tml-qemu-supervisor -c ${
-          (pkgs.formats.toml {}).generate "tml-supervisor-qemu-${supervisorId}.toml" qemuSupervisorConfig
+          (pkgs.formats.toml {}).generate "tml-qemu-${supervisorId}-supervisor.toml" qemuSupervisorConfig
         }";
       };
     };
