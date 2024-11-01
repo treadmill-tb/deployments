@@ -151,5 +151,18 @@
         ssh_forward_host_port = 22034;
       };
     };
+
+    "fb1384d5-e1a5-469c-beb4-0d4d215c9793" = {
+      nbd_netboot_host_switch = "pton-srv0-sw0";
+      nbd_netboot_host_switch_port = "ge-0/0/9";
+      nbd_netboot_host_vlan = 1006;
+      nbd_netboot_host_ip4 = {
+        network = "172.17.193.36";
+        prefixlen = 30;
+        supervisor_addr = "172.17.193.37";
+        addr = "172.17.193.38";
+        ssh_forward_host_port = 22038;
+      };
+    };
   };
 }
